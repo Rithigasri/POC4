@@ -1,0 +1,28 @@
+---
+- name: Install Docker and dependencies
+  hosts: all
+  become: yes
+  tasks:
+    - name: Update apt package manager
+      apt:
+        update_cache: yes
+
+    - name: Install Docker
+      apt:
+        name: docker.io
+        state: present
+
+    - name: Install Git
+      apt:
+        name: git
+        state: present
+
+    - name: Add the ubuntu user to the Docker group
+      user:
+        name: ubuntu
+        groups: docker
+        append: yes
+    - name: Install Java
+      apt:
+        name: openjdk-17-jdk
+        state: present

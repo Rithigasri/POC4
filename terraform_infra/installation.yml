@@ -1,0 +1,163 @@
+---
+- hosts: all
+  become: yes
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install required packages
+      apt:
+        name:
+          - unzip
+          - apache2
+        state: present
+
+    - name: Install Jenkins
+      apt:
+        name: jenkins
+        state: present
+        update_cache: yes
+
+    - name: Download Jenkins GPG key
+      get_url:
+        url: https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key
+        dest: /usr/share/keyrings/jenkins-keyring.asc
+        mode: '0644'
+
+    - name: Add Jenkins repository
+      lineinfile:
+        path: /etc/apt/sources.list.d/jenkins.list
+        line: "deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] https://pkg.jenkins.io/debian-stable binary/"
+        create: yes
+
+    - name: Start Jenkins service
+      systemd:
+        name: jenkins
+        state: started
+        enabled: yes
+
+    - name: Wait for Jenkins to start
+      wait_for:
+        port: 8080
+        delay: 10
+        timeout: 300
+
+    - name: Get initial admin password for Jenkins
+      command: cat /var/lib/jenkins/secrets/initialAdminPassword
+      register: jenkins_admin_password
+
+    - name: Debug Jenkins admin password
+      debug:
+        var: jenkins_admin_password.stdout
+
+    - name: Create SonarQube group
+      group:
+        name: sonarqube
+        state: present
+
+    - name: Create SonarQube user
+      user:
+        name: sonar
+        group: sonarqube
+        home: /opt/sonarqube
+        shell: /bin/bash
+        createhome: yes
+
+    - name: Download SonarQube
+      get_url:
+        url: "https://binaries.sonarsource.com/Distribution/sonarqube/sonarqube-10.5.1.90531.zip"
+        dest: "/tmp/sonarqube.zip"
+
+    - name: Unzip SonarQube
+      unarchive:
+        src: "/tmp/sonarqube.zip"
+        dest: "/opt"
+        remote_src: yes
+        creates: "/opt/sonarqube-10.5.1.90531"
+
+    - name: Set ownership and permissions for SonarQube directory
+      file:
+        path: "/opt/sonarqube-10.5.1.90531"
+        owner: sonar
+        group: sonarqube
+        state: directory
+        recurse: yes
+        mode: '0755'
+
+    - name: Remove existing SonarQube directory if it exists
+      file:
+        path: /opt/sonarqube
+        state: absent
+
+    - name: Link SonarQube directory
+      file:
+        src: "/opt/sonarqube-10.5.1.90531"
+        dest: /opt/sonarqube
+        state: link
+
+    - name: Create SonarQube systemd service file
+      copy:
+        dest: /etc/systemd/system/sonarqube.service
+        content: |
+          [Unit]
+          Description=SonarQube service
+          After=syslog.target network.target
+
+          [Service]
+          Type=forking
+          ExecStart=/opt/sonarqube/bin/linux-x86-64/sonar.sh start
+          ExecStop=/opt/sonarqube/bin/linux-x86-64/sonar.sh stop
+          User=sonar
+          Group=sonarqube
+          Restart=always
+          LimitNOFILE=65536
+          LimitNPROC=4096
+
+          [Install]
+          WantedBy=multi-user.target
+      notify:
+        - Reload systemd
+
+    - name: Ensure Apache is enabled and started
+      systemd:
+        name: apache2
+        enabled: yes
+        state: started
+
+  handlers:
+    - name: Reload systemd
+      command: systemctl daemon-reload
+
+- name: Install SonarQube Scanner
+  hosts: servers
+  become: true
+  vars:
+    sonar_scanner_version: "4.7.0.2747"
+    sonar_scanner_url: "https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-{{ sonar_scanner_version }}-linux.zip"
+    sonar_scanner_dir: "/opt/sonar-scanner"
+
+  tasks:
+    - name: Download SonarQube Scanner
+      get_url:
+        url: "{{ sonar_scanner_url }}"
+        dest: "/tmp/sonar-scanner-cli-{{ sonar_scanner_version }}.zip"
+
+    - name: Unzip SonarQube Scanner
+      unarchive:
+        src: "/tmp/sonar-scanner-cli-{{ sonar_scanner_version }}.zip"
+        dest: "/tmp/"
+        remote_src: yes
+
+    - name: Move SonarQube Scanner to /opt
+      command: mv /tmp/sonar-scanner-{{ sonar_scanner_version }}-linux {{ sonar_scanner_dir }}
+
+    - name: Set up environment variables
+      lineinfile:
+        path: /etc/profile
+        line: "export SONAR_SCANNER_HOME={{ sonar_scanner_dir }} && export PATH=$PATH:$SONAR_SCANNER_HOME/bin"
+        create: yes
+
+    - name: Notify user to source profile
+      debug:
+        msg: "Please run 'source /etc/profile' or log out and log back in to use SonarQube Scanner."

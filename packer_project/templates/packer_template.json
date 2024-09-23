@@ -1,0 +1,19 @@
+{
+    "builders": [
+      {
+        "type": "amazon-ebs",
+        "region": "us-west-2",
+        "instance_type": "t2.micro",
+        "source_ami": "ami-0075013580f6322a1",
+        "ssh_username": "ubuntu",
+        "ami_name": "custom-ami-with-docker-{{timestamp}}",
+        "ami_description": "A custom AMI with Docker and dependencies pre-installed"
+      }
+    ],
+    "provisioners": [
+      {
+        "type": "ansible",
+        "playbook_file": "./ansible/ansible_playbook.yml"
+      }
+    ]
+  }
