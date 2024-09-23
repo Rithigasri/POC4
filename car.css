@@ -1,0 +1,24 @@
+body{
+    background-color: black;
+   margin:50px;
+}
+
+#header
+{
+    display:flex;
+    justify-content:space-around;
+}
+a{
+    color:white;
+    
+}
+.img
+{
+    font-size:20px;
+    color:white;
+}
+#footer
+{
+   display: flex;
+   justify-content:space-around;
+}
