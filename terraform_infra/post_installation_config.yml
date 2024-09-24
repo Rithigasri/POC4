@@ -96,7 +96,7 @@
       <flow-definition>
         <description>Pipeline for SonarQube analysis and deployment</description>
         <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2.78">
-          <script>
+           <script>
             pipeline {
               agent any
 
@@ -115,10 +115,11 @@
                         sh """
                         export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
                         export PATH=\$JAVA_HOME/bin:\$PATH
-                        ${scannerHome}/bin/sonar-scanner \
+                        ${scannerHome}/sonar-scanner \
                         -Dsonar.projectKey=poc \
                         -Dsonar.sources=. \
-                        -Dsonar.host.url=http://52.32.81.91:9000
+                        -Dsonar.host.url=http://34.221.197.112:9000 \
+                        -Dsonar.login=sqp_51ddbf3421dd6644f063604a35942cf553d370ca
                         """
                       }
                     }
@@ -129,7 +130,7 @@
                     script {
                       dir('.scannerwork') {
                         def ceTaskId = sh(script: "grep 'ceTaskId' report-task.txt | cut -d'=' -f2", returnStdout: true).trim()
-                        def taskStatus = sh(script: "curl -u admin:sonar http://52.32.81.91:9000/api/ce/task?id=${ceTaskId}", returnStdout: true).trim()
+                        def taskStatus = sh(script: "curl -u admin:123456 http://34.221.197.112:9000/api/ce/task?id=${ceTaskId}", returnStdout: true).trim()
                         if (taskStatus.contains('"status":"FAILED"')) {
                           error "SonarQube analysis failed!"
                         } else if (taskStatus.contains('"status":"SUCCESS"')) {
@@ -145,15 +146,8 @@
                   steps {
                     script {
                       // Copy static website files to Apache document root
-                      sh 'cp -r dist/* /var/www/html/'
-                    }
-                  }
-                }
-                stage('Wait for Script Approval') {
-                  steps {
-                    script {
-                      echo 'Waiting for script approval...'
-                      sleep 30 // Adjust the time as needed
+                      sh 'sudo cp -r * /var/www/html/'
+                      echo "Deployment to Apache completed successfully."
                     }
                   }
                 }
