@@ -1,0 +1,28 @@
+---
+- name: Execute Jenkins API Token and Crumb commands
+  hosts: localhost
+  tasks:
+    - name: Get Jenkins crumb
+      shell: |
+        curl -s --cookie-jar /tmp/cookies -u admin:admin http://54.190.59.250:8080/crumbIssuer/api/json
+      register: crumb_response
+
+    - name: Parse Jenkins crumb value
+      set_fact:
+        crumb_value: "{{ crumb_response.stdout | from_json | json_query('crumb') }}"
+
+    - name: Print parsed crumb value
+      debug:
+        msg: "The crumb value is {{ crumb_value }}"
+
+    - name: Generate new Jenkins API token
+      shell: |
+        curl -X POST -H 'Jenkins-Crumb:{{ crumb_value }}' \
+        --cookie /tmp/cookies \
+        http://54.190.59.250:8080/me/descriptorByName/jenkins.security.ApiTokenProperty/generateNewToken?newTokenName=your_token_name \
+        -u admin:admin
+      register: token_response
+
+    - name: Print API token response
+      debug:
+        msg: "{{ token_response.stdout }}"

@@ -1,0 +1,99 @@
+---
+- name: Configure SonarQube and SonarRunner in Jenkins
+  hosts: servers
+  gather_facts: no
+  vars:
+    jenkins_host: "54.190.59.250"
+    jenkins_url: "http://54.190.59.250:8080"
+    jenkins_admin_user: "admin"
+    jenkins_api_token: "11cb0a26084e025c26fc6d9d3134902be7"
+    sonar_server_name: "New setting"
+    sonar_server_url: "http://3.109.4.71:9000"
+    sonar_access_token: "squ_660c49a43e9a8ec8d23c511bcb84e6cff2998f7d"
+    sonar_runner_version: "3.1.0.1141"
+
+  tasks:
+    - name: Debug variables
+      debug:
+        msg:
+          - "Jenkins URL: {{ jenkins_url }}"
+          - "Jenkins User: {{ jenkins_admin_user }}"
+
+    - name: Get Jenkins Crumb
+      uri:
+        url: "http://{{ jenkins_host }}:8080/crumbIssuer/api/json"
+        method: GET
+        user: "{{ jenkins_admin_user }}"
+        password: "{{ jenkins_api_token }}"
+        force_basic_auth: yes
+        return_content: yes
+      register: jenkins_crumb
+
+    - name: Debug Jenkins Crumb
+      debug:
+        var: jenkins_crumb
+
+    - name: Configure SonarQube server in Jenkins
+      uri:
+        url: "http://{{ jenkins_host }}:8080/manage"
+        method: POST
+        user: "{{ jenkins_admin_user }}"
+        password: "{{ jenkins_api_token }}"
+        force_basic_auth: yes
+        headers:
+          Content-Type: "application/x-www-form-urlencoded"
+          Jenkins-Crumb: "{{ jenkins_crumb.json.crumb }}"
+        body: "name={{ sonar_server_name }}&serverUrl={{ sonar_server_url }}&sonarToken={{ sonar_access_token }}&description=SonarQube server"
+        status_code: 200
+        follow_redirects: all
+
+- name: Configure JDK in Jenkins using Script Console
+  hosts: localhost
+  gather_facts: no
+  vars:
+    jenkins_url: "http://54.190.59.250:8080"
+    jenkins_admin_user: "admin"
+    jenkins_api_token: "11cb0a26084e025c26fc6d9d3134902be7"
+    jdk_name: "JDK 11"
+    jdk_home_path: "/usr/lib/jvm/java-11-openjdk-amd64"
+
+  tasks:
+    - name: Get Jenkins Crumb
+      uri:
+        url: "{{ jenkins_url }}/crumbIssuer/api/json"
+        method: GET
+        user: "{{ jenkins_admin_user }}"
+        password: "{{ jenkins_api_token }}"
+        force_basic_auth: yes
+        return_content: yes
+      register: jenkins_crumb
+
+    - name: Debug Jenkins Crumb
+      debug:
+        msg: "Jenkins Crumb: {{ jenkins_crumb.json.crumb }}"
+
+    - name: Configure JDK in Jenkins via Script Console
+      uri:
+        url: "{{ jenkins_url }}/scriptText"
+        method: POST
+        user: "{{ jenkins_admin_user }}"
+        password: "{{ jenkins_api_token }}"
+        force_basic_auth: yes
+        headers:
+          Content-Type: "application/x-www-form-urlencoded"
+          Jenkins-Crumb: "{{ jenkins_crumb.json.crumb }}"
+        body: |
+          println("Configuring JDK...");
+          def inst = Jenkins.getInstance()
+          def desc = inst.getDescriptor("hudson.model.JDK")
+          def jdkList = desc.getInstallations()
+          def newJDK = new hudson.model.JDK("{{ jdk_name }}", "{{ jdk_home_path }}")
+          jdkList += newJDK
+          desc.setInstallations(jdkList)
+          desc.save()
+        status_code: 200
+      register: configure_response
+
+    - name: Debug Configure Response
+      debug:
+        var: configure_response

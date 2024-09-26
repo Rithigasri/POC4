@@ -1,0 +1,52 @@
+- hosts: servers
+  become: true
+  tasks:
+    - name: Ensure the init.groovy.d directory exists
+      file:
+        path: /var/lib/jenkins/init.groovy.d
+        state: directory
+        owner: jenkins
+        group: jenkins
+        mode: '0755'
+
+    - name: Disable Jenkins setup wizard
+      copy:
+        dest: /var/lib/jenkins/init.groovy.d/configuration
+        content: |
+          # Disable the setup wizard
+          jenkins.install.InstallState.INITIAL_SETUP_COMPLETED = true
+      notify: Restart Jenkins
+
+    - name: Place user creation script in Jenkins
+      copy:
+        dest: /var/lib/jenkins/init.groovy.d/basic-security.groovy
+        content: |
+          #!groovy
+          import jenkins.model.*
+          import hudson.security.*
+
+          def instance = Jenkins.getInstance()
+          println "--> creating local user 'admin'"
+
+          def hudsonRealm = new HudsonPrivateSecurityRealm(false)
+          hudsonRealm.createAccount('admin', 'admin')  # Change password as needed
+          instance.setSecurityRealm(hudsonRealm)
+
+          def strategy = new FullControlOnceLoggedInAuthorizationStrategy()
+          instance.setAuthorizationStrategy(strategy)
+
+          instance.save()
+      notify: Restart Jenkins
+
+    - name: Install suggested plugins
+      command: >
+        java -jar /var/cache/jenkins/war/jenkins-cli.jar -s http://localhost:8080/ -auth admin:admin install-plugin git workflow-aggregator
+      register: install_plugins
+      retries: 5
+      delay: 15
+      until: install_plugins.rc == 0
+
+    - name: Restart Jenkins
+      service:
+        name: jenkins
+        state: restarted

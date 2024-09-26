@@ -1,0 +1,52 @@
+---
+- name: Manage Jenkins Plugins
+  hosts: servers
+  become: true  # Add this line to escalate privileges
+  vars:
+    jenkins_host: "34.213.245.87"  # Jenkins server IP or hostname
+    jenkins_user: "admin"            # Jenkins user
+    jenkins_password: "119254b515622053fcf4f25bf973472ef"  # Jenkins API token
+    jenkins_plugins:
+      sonar:
+        version: "latest"
+
+      git-server:
+        version: "latest"
+        enabled: true
+
+  tasks:
+    - name: Install required Jenkins plugins
+      community.general.jenkins_plugin:
+        name: "{{ item.key }}"
+        version: "{{ item.value.version | default(omit) }}"
+        state: latest
+        url: "http://{{ jenkins_host }}:8080"
+        url_username: "{{ jenkins_user }}"
+        url_password: "{{ jenkins_password }}"
+      with_dict: "{{ jenkins_plugins }}"
+      register: installed_plugins
+
+    - name: Check if restart is required by any of the plugins
+      set_fact:
+        jenkins_restart_required: true
+      when: item.changed
+      with_items: "{{ installed_plugins.results }}"
+
+    - name: Restart Jenkins if required
+      ansible.builtin.service:
+        name: jenkins
+        state: restarted
+      when: jenkins_restart_required
+
+    - name: Wait for Jenkins to start up
+      ansible.builtin.uri:
+        url: "http://{{ jenkins_host }}:8080"
+        status_code: 200
+        timeout: 5
+      register: jenkins_service_status
+      retries: 60
+      delay: 5
+      until: >
+        'status' in jenkins_service_status and
+        jenkins_service_status['status'] == 200
+      when: jenkins_restart_required

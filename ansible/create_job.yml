@@ -1,96 +1,11 @@
 ---
-- name: Manage Jenkins Plugins
-  hosts: servers
-  become: true  # Add this line to escalate privileges
-  vars:
-    jenkins_host: "52.32.81.91"  # Jenkins server IP or hostname
-    jenkins_user: "rithi"         # Jenkins user
-    jenkins_password: "116351172da2a9371de0720e1062a9dc52"  # Jenkins API token
-    jenkins_plugins:
-      sonar:
-        version: "latest"
-      git-server:
-        version: "latest"
-        enabled: true
-
-  tasks:
-    - name: Install required Jenkins plugins
-      community.general.jenkins_plugin:
-        name: "{{ item.key }}"
-        version: "{{ item.value.version | default(omit) }}"
-        state: latest
-        url: "http://{{ jenkins_host }}:8080"
-        url_username: "{{ jenkins_user }}"
-        url_password: "{{ jenkins_password }}"
-      with_dict: "{{ jenkins_plugins }}"
-      register: installed_plugins
-
-    - name: Check if restart is required by any of the plugins
-      set_fact:
-        jenkins_restart_required: true
-      when: item.changed
-      with_items: "{{ installed_plugins.results }}"
-
-    - name: Restart Jenkins if required
-      ansible.builtin.service:
-        name: jenkins
-        state: restarted
-      when: jenkins_restart_required
-
-    - name: Wait for Jenkins to start up
-      ansible.builtin.uri:
-        url: "http://{{ jenkins_host }}:8080"
-        status_code: 200
-        timeout: 5
-      register: jenkins_service_status
-      retries: 60
-      delay: 5
-      until: >
-        'status' in jenkins_service_status and
-        jenkins_service_status['status'] == 200
-      when: jenkins_restart_required
-
----
-- name: Add SonarQube token to Jenkins
-  hosts: servers
-  vars:
-    jenkins_host: "52.32.81.91"   # Jenkins server IP or hostname
-    jenkins_user: "rithi"         # Jenkins user
-    jenkins_password: "116351172da2a9371de0720e1062a9dc52"  # Jenkins API token
-    sonar_token: "sqp_17f617f7258421ceee78e8758947b7937ab35321"  # SonarQube token
-
-  tasks:
-    - name: Get Jenkins Crumb
-      uri:
-        url: "http://{{ jenkins_host }}:8080/crumbIssuer/api/json"
-        method: GET
-        user: "{{ jenkins_user }}"
-        password: "{{ jenkins_password }}"
-        force_basic_auth: yes
-        return_content: yes
-      register: jenkins_crumb
-
-    - name: Add SonarQube token to Jenkins credentials store
-      uri:
-        url: "http://{{ jenkins_host }}:8080/manage/credentials/store/system/domain/_/createCredentials"
-        method: POST
-        user: "{{ jenkins_user }}"
-        password: "{{ jenkins_password }}"
-        force_basic_auth: yes
-        follow_redirects: all  # This allows following redirects
-        headers:
-          Content-Type: "application/x-www-form-urlencoded"
-          Jenkins-Crumb: "{{ jenkins_crumb.json.crumb }}"
-        body: "json={{ {'': '0', 'credentials': { 'scope': 'GLOBAL', 'id': 'sonarqube-token', 'secret': sonar_token, 'description': 'SonarQube Token', '$class': 'org.jenkinsci.plugins.plaincredentials.impl.StringCredentialsImpl' }} | to_json | urlencode }}"
-
----
 - name: Create and Run Jenkins Job for SonarQube Analysis and Deployment
   hosts: servers
   vars:
-    jenkins_host: "52.32.81.91"   # Jenkins server IP or hostname
+    jenkins_host: "34.221.197.112"   # Jenkins server IP or hostname
     jenkins_user: "rithi"         # Jenkins user
-    jenkins_password: "116351172da2a9371de0720e1062a9dc52"  # Jenkins API token
-    job_name: "Job2"              # Name of the job
+    jenkins_password: "1143ccec920b9ce2939dfa3ebe86c5e35f"  # Jenkins API token
+    job_name: "Job2"      # Name of the job
     job_config: |
       <?xml version='1.0' encoding='UTF-8'?>
       <flow-definition>
@@ -115,10 +30,11 @@
                         sh """
                         export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
                         export PATH=\$JAVA_HOME/bin:\$PATH
-                        ${scannerHome}/bin/sonar-scanner \
+                        ${scannerHome}/sonar-scanner \
                         -Dsonar.projectKey=poc \
                         -Dsonar.sources=. \
-                        -Dsonar.host.url=http://52.32.81.91:9000
+                        -Dsonar.host.url=http://34.221.197.112:9000 \
+                        -Dsonar.login=sqp_51ddbf3421dd6644f063604a35942cf553d370ca
                         """
                       }
                     }
@@ -129,7 +45,7 @@
                     script {
                       dir('.scannerwork') {
                         def ceTaskId = sh(script: "grep 'ceTaskId' report-task.txt | cut -d'=' -f2", returnStdout: true).trim()
-                        def taskStatus = sh(script: "curl -u admin:sonar http://52.32.81.91:9000/api/ce/task?id=${ceTaskId}", returnStdout: true).trim()
+                        def taskStatus = sh(script: "curl -u admin:123456 http://34.221.197.112:9000/api/ce/task?id=${ceTaskId}", returnStdout: true).trim()
                         if (taskStatus.contains('"status":"FAILED"')) {
                           error "SonarQube analysis failed!"
                         } else if (taskStatus.contains('"status":"SUCCESS"')) {
@@ -145,15 +61,8 @@
                   steps {
                     script {
                       // Copy static website files to Apache document root
-                      sh 'cp -r dist/* /var/www/html/'
-                    }
-                  }
-                }
-                stage('Wait for Script Approval') {
-                  steps {
-                    script {
-                      echo 'Waiting for script approval...'
-                      sleep 30 // Adjust the time as needed
+                      sh 'sudo cp -r * /var/www/html/'
+                      echo "Deployment to Apache completed successfully."
                     }
                   }
                 }
