@@ -1,0 +1,9 @@
+---
+- import_playbook: installation.yml
+- import_playbook: jenkins_login.yml
+- import_playbook: generate_api.yml
+- import_playbook: plugin_install.yml
+- import_playbook: system_tool_config.yml
+- import_playbook: sonar_project_generation.yml
+- import_playbook: credentials_jenkins.yml
+- import_playbook: create_job.yml
