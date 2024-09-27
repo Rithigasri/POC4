@@ -1,0 +1,9 @@
+---
+- import_playbook: ansible_playbooks/installation.yml
+- import_playbook: ansible_playbooks/jenkins_login.yml
+- import_playbook: ansible_playbooks/generate_api.yml
+- import_playbook: ansible_playbooks/plugin_install.yml
+- import_playbook: ansible_playbooks/sonar_project_generation.yml
+- import_playbook: ansible_playbooks/credentials_jenkins.yml
+- import_playbook: ansible_playbooks/system_tool_config.yml
+- import_playbook: ansible_playbooks/create_job.yml

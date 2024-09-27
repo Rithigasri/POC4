@@ -1,0 +1,86 @@
+---
+- name: Configure Sonar Scanner Path and set JAVA_HOME
+  hosts: servers
+  become: true  # Ensure necessary privileges
+  vars:
+    jenkins_host: "http://{{ ansible_host }}:8080"  # Ensure this includes the protocol
+    jenkins_user: "admin"  # Jenkins user
+    sonar_name: "SonarQube"  # SonarQube server name
+    sonar_server_url: "http://{{ ansible_host }}:9000"  # SonarQube server URL
+
+  tasks:
+    - name: Read Jenkins API token from api-token.txt
+      ansible.builtin.slurp:
+        src: api_token.txt  # Adjust this path as needed
+      register: api_token
+
+    - name: Set Jenkins password from decoded token
+      set_fact:
+        jenkins_password: "{{ api_token.content | b64decode }}"
+
+    - name: Read SonarQube token from sonar_token.txt
+      ansible.builtin.slurp:
+        src: sonar_token.txt  # Adjust this path as needed
+      register: sonar_token
+
+    - name: Set SonarQube auth token from decoded content
+      set_fact:
+        sonar_auth_token: "{{ sonar_token.content | b64decode }}"
+
+    - name: Set JAVA_HOME in /etc/environment
+      lineinfile:
+        path: /etc/environment
+        line: 'JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64'
+        state: present
+
+    - name: Get Jenkins Crumb
+      uri:
+        url: "{{ jenkins_host }}/crumbIssuer/api/json"  # Corrected to use jenkins_host
+        method: GET
+        user: "{{ jenkins_user }}"
+        password: "{{ jenkins_password }}"
+        force_basic_auth: yes
+        return_content: yes
+      register: jenkins_crumb
+
+
+    - name: Ensure pip3 is installed
+      package:
+        name: python3-pip
+        state: present
+
+    - name: Install python-jenkins
+      pip:
+        name: python-jenkins
+        state: present
+
+    - name: Read API token from file
+      slurp:
+        src: api_token.txt  # Update with the correct path
+      register: token_file
+
+    - name: Set the API token variable
+      set_fact:
+        api_token: "{{ token_file.content | b64decode }}"
+
+    - name: Configure Global Tool Configuration for SonarQube Scanner
+      jenkins_job:
+        name: "SonarQube Scanner"
+        config: |
+          <project>
+            <builders>
+              <hudson.plugins.sonar.SonarRunnerBuilder>
+                <properties>
+                  <sonarScannerHome>/opt/sonar-scanner</sonarScannerHome>
+                </properties>
+              </hudson.plugins.sonar.SonarRunnerBuilder>
+            </builders>
+          </project>
+        state: present
+        url: "http://{{ ansible_host }}:8080"  # Update with your Jenkins URL
+        user: "admin"                     # Replace with your Jenkins username
+        token: "{{ api_token }}"           # Use the variable for the token
+      register: result
+
+    - debug:
+        var: result

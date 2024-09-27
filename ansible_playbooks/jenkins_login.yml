@@ -1,0 +1,33 @@
+- hosts: servers
+  become: true
+  tasks:
+    - name: Fetch Jenkins initial admin password
+      slurp:
+        src: /var/lib/jenkins/secrets/initialAdminPassword
+      register: jenkins_initial_password
+
+    - name: Decode the retrieved admin password
+      set_fact:
+        initial_password: "{{ jenkins_initial_password['content'] | b64decode }}"
+
+
+    - name: Wait briefly for Jenkins to be fully operational
+      pause:
+        seconds: 30
+
+    - name: Disable Jenkins setup wizard for future logins
+      copy:
+        content: "2.462.2"
+        dest: /var/lib/jenkins/jenkins.install.InstallUtil.lastExecVersion
+        mode: '0644'
+
+    - name: Finalize Jenkins setup with a restart
+      systemd:
+        name: jenkins
+        state: restarted
+
+  handlers:
+    - name: Restart Jenkins
+      systemd:
+        name: jenkins
+        state: restarted

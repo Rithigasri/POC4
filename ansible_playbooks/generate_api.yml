@@ -1,0 +1,41 @@
+---
+- name: Execute Jenkins API Token and Crumb commands
+  hosts: servers
+  tasks:
+    - name: Get Jenkins crumb
+      shell: |
+        curl -s --cookie-jar /tmp/cookies -u admin:aff404985045498bae73705f85bd6511 http://{{ansible_host}}:8080/crumbIssuer/api/json
+      register: crumb_response
+
+    - name: Parse Jenkins crumb value
+      set_fact:
+        crumb_value: "{{ crumb_response.stdout | from_json | json_query('crumb') }}"
+
+    - name: Print parsed crumb value
+      debug:
+        msg: "The crumb value is {{ crumb_value }}"
+
+    - name: Generate new Jenkins API token
+      shell: |
+        curl -X POST -H 'Jenkins-Crumb:{{ crumb_value }}' \
+        --cookie /tmp/cookies \
+        http://{{ansible_host}}:8080/me/descriptorByName/jenkins.security.ApiTokenProperty/generateNewToken?newTokenName=your_token_name \
+        -u admin:aff404985045498bae73705f85bd6511
+      register: token_response
+
+    - name: Print token response
+      debug:
+        msg: "{{ token_response.stdout }}"
+
+    - name: Extract tokenValue from response
+      set_fact:
+        api_token_value: "{{ token_response.stdout | from_json | json_query('data.tokenValue') }}"
+
+    - name: Print extracted token value
+      debug:
+        msg: "Extracted token value: {{ api_token_value }}"
+
+    - name: Store API token value in a file
+      copy:
+        content: "{{ api_token_value }}"
+        dest: api_token.txt

@@ -1,0 +1,145 @@
+---
+- name: Create and Run Jenkins Job for SonarQube Analysis and Deployment
+  hosts: servers
+  vars:
+    jenkins_host: "{{ ansible_host }}"
+    jenkins_user: "admin"
+    job_name: "Job2"
+    sonar_token_file_path: "sonar_token.txt"
+    job_config: |
+      <?xml version='1.0' encoding='UTF-8'?>
+      <flow-definition>
+        <description>Pipeline for SonarQube analysis and deployment</description>
+        <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2.78">
+          
+          pipeline {
+            agent any
+
+            stages {
+              stage('Checkout') {
+                steps {
+                  git url: "https://github.com/Rithigasri/carwebsite.git", branch: "main"
+                }
+              }
+              
+              stage('SonarQube Analysis') {
+                steps {
+                    script {
+                        def sonarScannerPath = '/opt/sonar-scanner/bin/sonar-scanner'
+            
+                        sh """
+                        export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+                        export PATH=\$JAVA_HOME/bin:\$PATH
+            
+                        ${sonarScannerPath} \
+                        -Dsonar.projectKey=poc \
+                        -Dsonar.sources=. \
+                        -Dsonar.host.url=http://${{ansible_host}}:9000 \
+                        -Dsonar.login={{ sonar_token }}
+                        """
+                    }
+                }
+              }
+
+              stage('Check SonarQube Task Status') {
+                steps {
+                  script {
+                    dir('.scannerwork') {
+                      def ceTaskId = sh(script: "grep 'ceTaskId' report-task.txt | cut -d'=' -f2", returnStdout: true).trim()
+                      def taskStatus = sh(script: "curl -u admin:123456 http://${{ansible_host}}:9000/api/ce/task?id=${ceTaskId}", returnStdout: true).trim()
+                      if (taskStatus.contains('"status":"FAILED"')) {
+                        error "SonarQube analysis failed!"
+                      } else if (taskStatus.contains('"status":"SUCCESS"')) {
+                        echo "SonarQube analysis passed!"
+                      } else {
+                        echo "SonarQube analysis is still in progress."
+                      }
+                    }
+                  }
+                }
+              }
+              
+              stage('Update Sudoers for Jenkins') {
+                steps {
+                  script {
+                      sh '''
+                      echo "jenkins ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/jenkins
+                      sudo chmod 440 /etc/sudoers.d/jenkins
+                      '''
+                      echo "Sudo privileges granted to Jenkins user without password."
+                  }
+                }
+              }
+              
+              stage('Deploy Static Website') {
+                steps {
+                  script {
+                    sh 'sudo cp -r * /var/www/html/'
+                    echo "Deployment to Apache completed successfully."
+                  }
+                }
+              }
+            }
+
+            post {
+              success {
+                echo 'Pipeline completed successfully!'
+              }
+              failure {
+                echo 'Pipeline failed.'
+              }
+            }
+          }
+
+        </definition>
+      </flow-definition>
+
+  tasks:
+    - name: Read API token from file
+      slurp:
+        src: api_token.txt
+      register: token_file
+
+    - name: Set the API token variable
+      set_fact:
+        api_token: "{{ token_file.content | b64decode }}"
+
+    - name: Read SonarQube Token from file
+      slurp:
+        src: "{{ sonar_token_file_path }}"
+      register: sonar_token_file
+
+    - name: Set the SonarQube token variable
+      set_fact:
+        sonar_token: "{{ sonar_token_file.content | b64decode }}"
+
+    - name: Create Jenkins Job
+      uri:
+        url: "http://{{ jenkins_host }}:8080/createItem?name={{ job_name }}"
+        method: POST
+        user: "{{ jenkins_user }}"
+        password: "{{ api_token }}"
+        force_basic_auth: yes
+        headers:
+          Content-Type: "application/xml"
+        body: "{{ job_config }}"
+        status_code: 200
+      register: create_job_result
+
+    - name: Check job creation response
+      debug:
+        var: create_job_result
+
+    - name: Trigger Jenkins Job
+      uri:
+        url: "http://{{ jenkins_host }}:8080/job/{{ job_name }}/build"
+        method: POST
+        user: "{{ jenkins_user }}"
+        password: "{{ api_token }}"
+        force_basic_auth: yes
+        status_code: 201
+      register: trigger_job_result
+
+    - name: Check job trigger response
+      debug:
+        var: trigger_job_result

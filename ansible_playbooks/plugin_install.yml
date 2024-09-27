@@ -3,24 +3,33 @@
   hosts: servers
   become: true  # Add this line to escalate privileges
   vars:
-    jenkins_host: "34.213.245.87"  # Jenkins server IP or hostname
     jenkins_user: "admin"            # Jenkins user
-    jenkins_password: "119254b515622053fcf4f25bf973472ef"  # Jenkins API token
-    jenkins_plugins:
-      sonar:
-        version: "latest"
-
-      git-server:
-        version: "latest"
-        enabled: true
 
   tasks:
+    - name: Read API token from file
+      slurp:
+        src: api_token.txt  # Adjust this path if needed
+      register: api_token_file
+
+    - name: Set the Jenkins API token
+      set_fact:
+        jenkins_password: "{{ api_token_file.content | b64decode | trim }}"  # Decode the base64 content
+
+    - name: Define Jenkins plugins
+      set_fact:
+        jenkins_plugins:
+          sonar:
+            version: "latest"
+          git-server:
+            version: "latest"
+            enabled: true
+
     - name: Install required Jenkins plugins
       community.general.jenkins_plugin:
         name: "{{ item.key }}"
         version: "{{ item.value.version | default(omit) }}"
         state: latest
-        url: "http://{{ jenkins_host }}:8080"
+        url: "http://{{ ansible_host }}:8080"
         url_username: "{{ jenkins_user }}"
         url_password: "{{ jenkins_password }}"
       with_dict: "{{ jenkins_plugins }}"
@@ -40,7 +49,7 @@
 
     - name: Wait for Jenkins to start up
       ansible.builtin.uri:
-        url: "http://{{ jenkins_host }}:8080"
+        url: "http://{{ ansible_host }}:8080"
         status_code: 200
         timeout: 5
       register: jenkins_service_status
