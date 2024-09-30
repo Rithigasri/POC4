@@ -14,6 +14,13 @@
           
           pipeline {
             agent any
+            environment {
+                JENKINS_HOST = "${jenkins_host}"
+                SONAR_SCANNER = '/opt/sonar-scanner/bin/sonar-scanner'
+                SONAR_PROJECT_KEY = 'poc'
+                SONAR_HOST_URL = "http://${jenkins_host}:9000"
+                SONAR_LOGIN_TOKEN = "{{ sonar_token }}"
+              }
 
             stages {
               stage('Checkout') {
@@ -34,7 +41,7 @@
                         ${sonarScannerPath} \
                         -Dsonar.projectKey=poc \
                         -Dsonar.sources=. \
-                        -Dsonar.host.url=http://${{ansible_host}}:9000 \
+                        -Dsonar.host.url=http://${{jenkins_host}}:9000 \
                         -Dsonar.login={{ sonar_token }}
                         """
                     }
@@ -46,7 +53,7 @@
                   script {
                     dir('.scannerwork') {
                       def ceTaskId = sh(script: "grep 'ceTaskId' report-task.txt | cut -d'=' -f2", returnStdout: true).trim()
-                      def taskStatus = sh(script: "curl -u admin:123456 http://${{ansible_host}}:9000/api/ce/task?id=${ceTaskId}", returnStdout: true).trim()
+                      def taskStatus = sh(script: "curl -u admin:123456 http://${{jenkins_host}}:9000/api/ce/task?id=${ceTaskId}", returnStdout: true).trim()
                       if (taskStatus.contains('"status":"FAILED"')) {
                         error "SonarQube analysis failed!"
                       } else if (taskStatus.contains('"status":"SUCCESS"')) {
@@ -59,27 +66,30 @@
                 }
               }
               
-              stage('Update Sudoers for Jenkins') {
-                steps {
-                  script {
+              stage('Grant Sudo Privileges to Jenkins') {
+                  steps {
+                    script {
                       sh '''
                       echo "jenkins ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/jenkins
                       sudo chmod 440 /etc/sudoers.d/jenkins
                       '''
                       echo "Sudo privileges granted to Jenkins user without password."
+                    }
+                  }
+                }
+                stage('Deploy Static Website') {
+                  steps {
+                    script {
+                      sh '''
+                      sudo chown -R www-data:www-data /var/www/html
+                      sudo chmod -R 755 /var/www/html
+                      sudo cp -r * /var/www/html/
+                      echo "Deployment to Apache completed successfully."
+                      '''
+                    }
                   }
                 }
               }
-              
-              stage('Deploy Static Website') {
-                steps {
-                  script {
-                    sh 'sudo cp -r * /var/www/html/'
-                    echo "Deployment to Apache completed successfully."
-                  }
-                }
-              }
-            }
 
             post {
               success {
